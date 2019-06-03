@@ -68,10 +68,14 @@ cv::Mat getHist(cv::Mat depth, float rng = 5000) {
 
 	cv::calcHist( &depth, 1, 0, cv::Mat(), hist, 1, &histSize, &histRange, uniform, accumulate );
 
+	return hist;
+}
+
+cv::Mat drawHist(cv::Mat hist) {
 	int hh = 100, hw = 1000;
 	cv::Mat hist_image = cv::Mat::zeros(hh+10, hw, CV_8UC3);
 	cv::normalize(hist, hist, 0, hh, cv::NORM_MINMAX, -1, cv::Mat());
-	for (int i = 0; i < histSize; i++) {
+	for (int i = 0; i < hist.size().height; i++) {
 		cv::line(hist_image, cv::Point(i, hh+10), cv::Point( i, hh - cvRound(hist.at<float>(i))), cv::Scalar::all(255));
 	}
 	return hist_image;
@@ -92,10 +96,25 @@ void drawCanvas(cv::Mat canvas) {
 
 	std::string help = 
 		"S - save images\n"
+		"A - auto range\n"
 		"Q - quit"
 	;
 
 	putTexts(canvas, help, {10, 20}, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar::all(255), 1.7);
+}
+
+struct mouse_pos {
+	mouse_pos() : x(-1), y(-1) {}
+	int x;
+	int y;
+};
+
+static void onMouse( int event, int x, int y, int, void* data) {
+	mouse_pos * mp = (mouse_pos*)data;
+	y = y - 240;
+	if (x > 640) x = x - 640;
+	mp->x = x;
+	mp->y = y;
 }
 
 int main(int argc, char * argv[]) {
@@ -158,6 +177,9 @@ int main(int argc, char * argv[]) {
 	cv::createTrackbar("min", "KinectViewer", &depth_min, 10000, NULL);
 	cv::createTrackbar("range", "KinectViewer", &depth_range, 10000, NULL);
 	cv::createTrackbar("blend", "KinectViewer", &blend_ratio, 100, NULL);
+	
+	mouse_pos mp;
+    cv::setMouseCallback( "KinectViewer", onMouse, &mp );
 
 
 	cv::Mat canvas(720, 1280, CV_8UC3, cv::Scalar::all(0));
@@ -193,9 +215,10 @@ int main(int argc, char * argv[]) {
 
 
 		cv::Mat hist = getHist(cv_depth);
+		cv::Mat hist_img = drawHist(hist);
 		
-		cv::Mat hist_overlay = cv::Mat::zeros(hist.size(), CV_8UC3);
-		cv::Mat hist_depth = cv::Mat::zeros(hist.size(), CV_16UC1);
+		cv::Mat hist_overlay = cv::Mat::zeros(hist_img.size(), CV_8UC3);
+		cv::Mat hist_depth = cv::Mat::zeros(hist_img.size(), CV_16UC1);
 		for (int i = 0; i < 1000; ++i) {
 			cv::line(hist_depth, {i, 0}, {i, hist_depth.size().height}, cv::Scalar::all(i*5));
 		}
@@ -203,13 +226,19 @@ int main(int argc, char * argv[]) {
 		cv::convertScaleAbs(hist_depth, hist_depth, 255./depth_range);
 		cv::applyColorMap(hist_depth, hist_overlay, cv::COLORMAP_JET);
 		
-		hist_overlay.copyTo(hist, hist);
-		cv::line(hist, {depth_min/5, 100}, {depth_min/5, 110}, cv::Scalar::all(255));
-		cv::line(hist, {(depth_min+depth_range)/5, 100}, {(depth_min+depth_range)/5, 110}, cv::Scalar::all(255));
+		hist_overlay.copyTo(hist_img, hist_img);
+		cv::line(hist_img, {depth_min/5, 100}, {depth_min/5, 110}, cv::Scalar::all(255));
+		cv::line(hist_img, {(depth_min+depth_range)/5, 100}, {(depth_min+depth_range)/5, 110}, cv::Scalar::all(255));
+
+		cv::rectangle(canvas, {0, 100}, {100, 220}, cv::Scalar::all(0), -1);
+		if (mp.y >= 0) {
+			int d = cv_depth.at<short>(mp.y, mp.x);
+			cv::putText(canvas, std::to_string(d), {10, 200}, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar::all(255));
+		}
 
 		putOn(canvas, out_rgb, {0, 240});
 		putOn(canvas, col_depth, {640, 240});
-		putOn(canvas, hist, {140, 100});
+		putOn(canvas, hist_img, {140, 100});
 		cv::imshow("KinectViewer", canvas);
 
 		char ch = cv::waitKey(15);
@@ -220,11 +249,24 @@ int main(int argc, char * argv[]) {
 			case 'Q':
 				return 0;
 			case 's':
-			case 'S':
-				using namespace std::chrono;
-				auto timestamp = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
-				cv::imwrite(std::to_string(timestamp) + "_d.png", cv_depth);
-				cv::imwrite(std::to_string(timestamp) + "_c.png", cv_rgb);		
+			case 'S': {
+					auto ts = timestamp();
+					cv::imwrite(ts + "_d.png", cv_depth);
+					cv::imwrite(ts + "_c.png", cv_rgb);
+					break;
+				}
+			case 'a': {
+					float hist_sum = cv::sum(hist)[0];
+					cv::Mat accumulatedHist = hist.clone();
+					for (int i = 1; i < hist.size().height; i++) {
+						accumulatedHist.at<float>(i) += accumulatedHist.at<float>(i - 1);
+						if (accumulatedHist.at<float>(i) < 0.001 * hist_sum) depth_min = i*5;
+						if (accumulatedHist.at<float>(i) < 0.999 * hist_sum) depth_range = i*5 - depth_min;
+					}
+					cv::setTrackbarPos("min", "KinectViewer", depth_min);
+					cv::setTrackbarPos("range", "KinectViewer", depth_range);
+					break;
+				}
 		}	
 	}
 	
