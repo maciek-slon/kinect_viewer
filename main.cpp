@@ -6,11 +6,43 @@
 
 #include "date.h"
 
+void putTextCentered(cv::Mat img, const std::string & str, cv::Point anchor, int fontFace, double fontScale, cv::Scalar color, int thickness = 1, int type = -1) {
+	int baseline;
+	cv::Size fs = cv::getTextSize(str, fontFace, fontScale, thickness, &baseline);
+	int x = anchor.x - fs.width / 2;
+	int y = anchor.y + fs.height / 2;
+	cv::putText(img, str, cv::Point(x, y), fontFace, fontScale, color, thickness, type);
+}
+
 std::string timestamp() {
 	using namespace date;
 	using namespace std::chrono;
 	auto now = date::floor<milliseconds>(system_clock::now());
 	return date::format("%Y-%m-%d_%H-%M-%S", now);
+}
+
+cv::Mat getHist(cv::Mat depth) {
+	float range[] = { 1, 10000 } ;
+	const float* histRange = { range };
+	int histSize = 1000;
+	bool uniform = true; 
+	bool accumulate = false;
+
+	cv::Mat hist;
+
+	cv::calcHist( &depth, 1, 0, cv::Mat(), hist, 1, &histSize, &histRange, uniform, accumulate );
+
+	int hh = 100, hw = 1000;
+	cv::Mat hist_image = cv::Mat::zeros(hh+20, hw, CV_8UC1);
+	cv::normalize(hist, hist, 0, hh, cv::NORM_MINMAX, -1, cv::Mat());
+	for (int i = 0; i < histSize; i++) {
+		cv::line(hist_image, cv::Point(i, hh), cv::Point( i, hh - cvRound(hist.at<float>(i))), cv::Scalar::all(255));
+	}
+	for (int i = 0; i <= 10; ++i) {
+		cv::line(hist_image, {i*100, hh}, {i*100, hh+3}, cv::Scalar::all(255));
+		putTextCentered(hist_image, std::to_string(i), {i*100, hh+10}, cv::FONT_HERSHEY_PLAIN, 0.8, cv::Scalar::all(255));
+	}
+	return hist_image;
 }
 
 int main(int argc, char * argv[]) {
@@ -21,6 +53,8 @@ int main(int argc, char * argv[]) {
 
 	int depth_min = 0;
 	int depth_range = 5000;
+
+	int blend_ratio = 50;
 
 	int index = 0;
 
@@ -72,6 +106,10 @@ int main(int argc, char * argv[]) {
 	cv::createTrackbar("range", "depth", &depth_range, 10000, NULL);
 
 
+	cv::namedWindow("color");
+	cv::createTrackbar("blend", "color", &blend_ratio, 100, NULL);
+
+
 	while(1) {
 		cv::Mat cv_rgb, cv_depth;
 		if (sim) {
@@ -96,7 +134,16 @@ int main(int argc, char * argv[]) {
 		cv::applyColorMap(out_depth, tmp_depth, cv::COLORMAP_JET);
 		tmp_depth.copyTo(col_depth, valid_mask);
 
-		cv::imshow("rgb", cv_rgb);
+		cv::Mat out_rgb, tmp_rgb;
+		cv_rgb.copyTo(tmp_rgb, depth_mask);
+		cv::addWeighted(cv_rgb, 0.01 * blend_ratio, tmp_rgb, 0.01 * (100-blend_ratio), 0, out_rgb);
+
+
+		cv::Mat hist = getHist(cv_depth);
+		
+		cv::imshow("hist", hist);
+
+		cv::imshow("color", out_rgb);
 		cv::imshow("depth", col_depth);
 
 		char ch = cv::waitKey(15);
