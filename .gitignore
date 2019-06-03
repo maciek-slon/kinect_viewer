@@ -1,4 +1,3 @@
 main
-*_c.png
-*_d.png
+*.png
 libfreenect/

@@ -2,17 +2,53 @@
 #include <opencv2/opencv.hpp>
 
 #include <chrono>
+#include <vector>
 #include <string>
 
 #include "date.h"
 
-void putTextCentered(cv::Mat img, const std::string & str, cv::Point anchor, int fontFace, double fontScale, cv::Scalar color, int thickness = 1, int type = -1) {
+std::string strip(const std::string & str) {	
+	std::string ret = str;
+	ret.erase( std::remove(ret.begin(), ret.end(), '\r'), ret.end() );
+	return ret;
+}
+
+
+template<typename Out>
+void split(const std::string &s, char delim, Out result) {
+	std::stringstream ss;
+	ss.str(s);
+	std::string item;
+	while (std::getline(ss, item, delim)) {
+		*(result++) = strip(item);
+	}
+}
+
+std::vector<std::string> split(const std::string &s, char delim) {
+	std::vector<std::string> elems;
+	split(s, delim, std::back_inserter(elems));
+	return elems;
+}
+
+
+
+void putTextCentered(cv::Mat img, const std::string & str, cv::Point anchor, int fontFace, double fontScale, cv::Scalar color, int thickness = 1, int type = cv::LINE_AA) {
 	int baseline;
 	cv::Size fs = cv::getTextSize(str, fontFace, fontScale, thickness, &baseline);
 	int x = anchor.x - fs.width / 2;
 	int y = anchor.y + fs.height / 2;
 	cv::putText(img, str, cv::Point(x, y), fontFace, fontScale, color, thickness, type);
 }
+
+void putTexts(cv::Mat img, const std::string & str, cv::Point origin, int fontFace, double fontScale, cv::Scalar color, float inter = 1.0, int thickness = 1, int type = cv::LINE_AA) {
+	auto lines = split(str, '\n');
+	cv::Point ori = origin;
+	for (int i = 0; i < lines.size(); ++i) {
+		cv::putText(img, lines[i], ori , fontFace, fontScale, color, thickness, type);
+		ori.y += 20 * fontScale * inter;
+	}
+}
+
 
 std::string timestamp() {
 	using namespace date;
@@ -21,8 +57,8 @@ std::string timestamp() {
 	return date::format("%Y-%m-%d_%H-%M-%S", now);
 }
 
-cv::Mat getHist(cv::Mat depth) {
-	float range[] = { 1, 10000 } ;
+cv::Mat getHist(cv::Mat depth, float rng = 5000) {
+	float range[] = { 1, rng } ;
 	const float* histRange = { range };
 	int histSize = 1000;
 	bool uniform = true; 
@@ -33,16 +69,33 @@ cv::Mat getHist(cv::Mat depth) {
 	cv::calcHist( &depth, 1, 0, cv::Mat(), hist, 1, &histSize, &histRange, uniform, accumulate );
 
 	int hh = 100, hw = 1000;
-	cv::Mat hist_image = cv::Mat::zeros(hh+20, hw, CV_8UC1);
+	cv::Mat hist_image = cv::Mat::zeros(hh+10, hw, CV_8UC3);
 	cv::normalize(hist, hist, 0, hh, cv::NORM_MINMAX, -1, cv::Mat());
 	for (int i = 0; i < histSize; i++) {
-		cv::line(hist_image, cv::Point(i, hh), cv::Point( i, hh - cvRound(hist.at<float>(i))), cv::Scalar::all(255));
-	}
-	for (int i = 0; i <= 10; ++i) {
-		cv::line(hist_image, {i*100, hh}, {i*100, hh+3}, cv::Scalar::all(255));
-		putTextCentered(hist_image, std::to_string(i), {i*100, hh+10}, cv::FONT_HERSHEY_PLAIN, 0.8, cv::Scalar::all(255));
+		cv::line(hist_image, cv::Point(i, hh+10), cv::Point( i, hh - cvRound(hist.at<float>(i))), cv::Scalar::all(255));
 	}
 	return hist_image;
+}
+
+void putOn(cv::Mat dst, cv::Mat src, cv::Point origin) {
+	src.copyTo(dst(cv::Rect(origin.x,origin.y,src.cols, src.rows)));
+}
+
+void drawCanvas(cv::Mat canvas) {
+	int hist_x = 140, hist_y = 100;
+	int hh = 100 + 10;
+	for (int i = 0; i <= 20; ++i) {
+		cv::line(canvas, {hist_x + i*50, hist_y + hh}, {hist_x + i*50, hist_y + hh+3}, cv::Scalar::all(255));
+		putTextCentered(canvas, std::to_string(i*250), {hist_x + i*50, hist_y + hh+10}, cv::FONT_HERSHEY_PLAIN, 0.8, cv::Scalar::all(255));
+	}
+	putTextCentered(canvas, "mm", {hist_x + 1000 + 30, hist_y + hh+10}, cv::FONT_HERSHEY_PLAIN, 0.8, cv::Scalar::all(255));
+
+	std::string help = 
+		"S - save images\n"
+		"Q - quit"
+	;
+
+	putTexts(canvas, help, {10, 20}, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar::all(255), 1.7);
 }
 
 int main(int argc, char * argv[]) {
@@ -51,8 +104,8 @@ int main(int argc, char * argv[]) {
 	uint32_t ts;
 	int ret;
 
-	int depth_min = 0;
-	int depth_range = 5000;
+	int depth_min = 500;
+	int depth_range = 1500;
 
 	int blend_ratio = 50;
 
@@ -101,14 +154,14 @@ int main(int argc, char * argv[]) {
 	}
 
 
-	cv::namedWindow("depth");
-	cv::createTrackbar("min", "depth", &depth_min, 10000, NULL);
-	cv::createTrackbar("range", "depth", &depth_range, 10000, NULL);
+	cv::namedWindow("KinectViewer");
+	cv::createTrackbar("min", "KinectViewer", &depth_min, 10000, NULL);
+	cv::createTrackbar("range", "KinectViewer", &depth_range, 10000, NULL);
+	cv::createTrackbar("blend", "KinectViewer", &blend_ratio, 100, NULL);
 
 
-	cv::namedWindow("color");
-	cv::createTrackbar("blend", "color", &blend_ratio, 100, NULL);
-
+	cv::Mat canvas(720, 1280, CV_8UC3, cv::Scalar::all(0));
+	drawCanvas(canvas);
 
 	while(1) {
 		cv::Mat cv_rgb, cv_depth;
@@ -141,17 +194,33 @@ int main(int argc, char * argv[]) {
 
 		cv::Mat hist = getHist(cv_depth);
 		
-		cv::imshow("hist", hist);
+		cv::Mat hist_overlay = cv::Mat::zeros(hist.size(), CV_8UC3);
+		cv::Mat hist_depth = cv::Mat::zeros(hist.size(), CV_16UC1);
+		for (int i = 0; i < 1000; ++i) {
+			cv::line(hist_depth, {i, 0}, {i, hist_depth.size().height}, cv::Scalar::all(i*5));
+		}
+		hist_depth = hist_depth - depth_min;
+		cv::convertScaleAbs(hist_depth, hist_depth, 255./depth_range);
+		cv::applyColorMap(hist_depth, hist_overlay, cv::COLORMAP_JET);
+		
+		hist_overlay.copyTo(hist, hist);
+		cv::line(hist, {depth_min/5, 100}, {depth_min/5, 110}, cv::Scalar::all(255));
+		cv::line(hist, {(depth_min+depth_range)/5, 100}, {(depth_min+depth_range)/5, 110}, cv::Scalar::all(255));
 
-		cv::imshow("color", out_rgb);
-		cv::imshow("depth", col_depth);
+		putOn(canvas, out_rgb, {0, 240});
+		putOn(canvas, col_depth, {640, 240});
+		putOn(canvas, hist, {140, 100});
+		cv::imshow("KinectViewer", canvas);
 
 		char ch = cv::waitKey(15);
 
 		switch(ch) {
 			case 27:
+			case 'q':
+			case 'Q':
 				return 0;
 			case 's':
+			case 'S':
 				using namespace std::chrono;
 				auto timestamp = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 				cv::imwrite(std::to_string(timestamp) + "_d.png", cv_depth);
