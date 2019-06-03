@@ -7,7 +7,7 @@
 
 #include "date.h"
 
-std::string strip(const std::string & str) {	
+std::string strip(const std::string & str) {
 	std::string ret = str;
 	ret.erase( std::remove(ret.begin(), ret.end(), '\r'), ret.end() );
 	return ret;
@@ -57,10 +57,10 @@ std::string timestamp() {
 	return date::format("%Y-%m-%d_%H-%M-%S", now);
 }
 
-cv::Mat getHist(cv::Mat depth, float rng = 5000) {
+cv::Mat getHist(cv::Mat depth, float rng = 6000) {
 	float range[] = { 1, rng } ;
 	const float* histRange = { range };
-	int histSize = 1000;
+	int histSize = 1200;
 	bool uniform = true; 
 	bool accumulate = false;
 
@@ -72,7 +72,7 @@ cv::Mat getHist(cv::Mat depth, float rng = 5000) {
 }
 
 cv::Mat drawHist(cv::Mat hist) {
-	int hh = 100, hw = 1000;
+	int hh = 100, hw = 1200;
 	cv::Mat hist_image = cv::Mat::zeros(hh+10, hw, CV_8UC3);
 	cv::normalize(hist, hist, 0, hh, cv::NORM_MINMAX, -1, cv::Mat());
 	for (int i = 0; i < hist.size().height; i++) {
@@ -86,13 +86,13 @@ void putOn(cv::Mat dst, cv::Mat src, cv::Point origin) {
 }
 
 void drawCanvas(cv::Mat canvas) {
-	int hist_x = 140, hist_y = 100;
+	int hist_x = 30, hist_y = 100;
 	int hh = 100 + 10;
-	for (int i = 0; i <= 20; ++i) {
+	for (int i = 0; i <= 24; ++i) {
 		cv::line(canvas, {hist_x + i*50, hist_y + hh}, {hist_x + i*50, hist_y + hh+3}, cv::Scalar::all(255));
 		putTextCentered(canvas, std::to_string(i*250), {hist_x + i*50, hist_y + hh+10}, cv::FONT_HERSHEY_PLAIN, 0.8, cv::Scalar::all(255));
 	}
-	putTextCentered(canvas, "mm", {hist_x + 1000 + 30, hist_y + hh+10}, cv::FONT_HERSHEY_PLAIN, 0.8, cv::Scalar::all(255));
+	putTextCentered(canvas, "mm", {hist_x + 1200 + 30, hist_y + hh+10}, cv::FONT_HERSHEY_PLAIN, 0.8, cv::Scalar::all(255));
 
 	std::string help = 
 		"S - save images\n"
@@ -100,7 +100,12 @@ void drawCanvas(cv::Mat canvas) {
 		"Q - quit"
 	;
 
-	putTexts(canvas, help, {10, 20}, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar::all(255), 1.7);
+	putTexts(canvas, help, {10, 20}, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar::all(255), 2);
+	
+	cv::rectangle(canvas, cv::Rect(5, 4, 200, 82), cv::Scalar::all(255), 1);
+	
+	putTexts(canvas, "R:\nG:\nB:\nD:", {1080, 20}, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar::all(255), 2);
+	cv::rectangle(canvas, cv::Rect(1075, 4, 200, 82), cv::Scalar::all(255), 1);
 }
 
 struct mouse_pos {
@@ -195,7 +200,6 @@ int main(int argc, char * argv[]) {
 			cv::Mat tmp_rgb(480, 640, CV_8UC3, rgb);
 			cv::cvtColor(tmp_rgb, cv_rgb, cv::COLOR_RGB2BGR);
 
-	
 			ret = freenect_sync_get_depth((void**)&depth, &ts, index, FREENECT_DEPTH_REGISTERED);
 			cv::Mat tmp_depth(480, 640, CV_16UC1, depth);
 			cv_depth = tmp_depth;
@@ -219,7 +223,7 @@ int main(int argc, char * argv[]) {
 		
 		cv::Mat hist_overlay = cv::Mat::zeros(hist_img.size(), CV_8UC3);
 		cv::Mat hist_depth = cv::Mat::zeros(hist_img.size(), CV_16UC1);
-		for (int i = 0; i < 1000; ++i) {
+		for (int i = 0; i < 1200; ++i) {
 			cv::line(hist_depth, {i, 0}, {i, hist_depth.size().height}, cv::Scalar::all(i*5));
 		}
 		hist_depth = hist_depth - depth_min;
@@ -230,15 +234,20 @@ int main(int argc, char * argv[]) {
 		cv::line(hist_img, {depth_min/5, 100}, {depth_min/5, 110}, cv::Scalar::all(255));
 		cv::line(hist_img, {(depth_min+depth_range)/5, 100}, {(depth_min+depth_range)/5, 110}, cv::Scalar::all(255));
 
-		cv::rectangle(canvas, {0, 100}, {100, 220}, cv::Scalar::all(0), -1);
+		cv::rectangle(canvas, cv::Rect(1100, 5, 150, 80), cv::Scalar::all(0), -1);
 		if (mp.y >= 0) {
 			int d = cv_depth.at<short>(mp.y, mp.x);
-			cv::putText(canvas, std::to_string(d), {10, 200}, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar::all(255));
+			auto bgr = cv_rgb.at<cv::Vec3b>(mp.y, mp.x);
+			std::string pixel_str = std::to_string(bgr[2]) + "\n" + std::to_string(bgr[1]) + "\n" +
+				std::to_string(bgr[0]) + "\n" + std::to_string(d);
+			putTexts(canvas, pixel_str, {1100, 20}, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar::all(255), 2);
+			cv::rectangle(canvas, {1150,5,60,60}, cv::Scalar(bgr), -1);
+			cv::rectangle(canvas, {1150,65,60,20}, col_depth.at<cv::Vec3b>(mp.y, mp.x), -1);
 		}
 
 		putOn(canvas, out_rgb, {0, 240});
 		putOn(canvas, col_depth, {640, 240});
-		putOn(canvas, hist_img, {140, 100});
+		putOn(canvas, hist_img, {30, 100});
 		cv::imshow("KinectViewer", canvas);
 
 		char ch = cv::waitKey(15);
