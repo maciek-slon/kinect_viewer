@@ -49,6 +49,17 @@ void putTexts(cv::Mat img, const std::string & str, cv::Point origin, int fontFa
 	}
 }
 
+void drawPoint(cv::Mat img, cv::Point pt) {
+	cv::circle(img, pt, 6, cv::Scalar::all(255), 1, CV_AA);
+	cv::Point px1 {10, 0};
+	cv::Point px2 {5, 0};
+	cv::Point py1 {0, 10};
+	cv::Point py2 {0, 5};
+	cv::line(img, pt - px1, pt - px2, cv::Scalar::all(255));
+	cv::line(img, pt + px1, pt + px2, cv::Scalar::all(255));
+	cv::line(img, pt - py1, pt - py2, cv::Scalar::all(255));
+	cv::line(img, pt + py1, pt + py2, cv::Scalar::all(255));
+}
 
 std::string timestamp() {
 	using namespace date;
@@ -57,7 +68,7 @@ std::string timestamp() {
 	return date::format("%Y-%m-%d_%H-%M-%S", now);
 }
 
-cv::Mat getHist(cv::Mat depth, float rng = 6000) {
+cv::Mat getHist(cv::Mat depth, float rng = 5000) {
 	float range[] = { 1, rng } ;
 	const float* histRange = { range };
 	int histSize = 1200;
@@ -72,7 +83,7 @@ cv::Mat getHist(cv::Mat depth, float rng = 6000) {
 }
 
 cv::Mat drawHist(cv::Mat hist) {
-	int hh = 100, hw = 1200;
+	int hh = 100, hw = 1000;
 	cv::Mat hist_image = cv::Mat::zeros(hh+10, hw, CV_8UC3);
 	cv::normalize(hist, hist, 0, hh, cv::NORM_MINMAX, -1, cv::Mat());
 	for (int i = 0; i < hist.size().height; i++) {
@@ -86,23 +97,27 @@ void putOn(cv::Mat dst, cv::Mat src, cv::Point origin) {
 }
 
 void drawCanvas(cv::Mat canvas) {
-	int hist_x = 30, hist_y = 100;
+	int hist_x = 220, hist_y = 110;
 	int hh = 100 + 10;
-	for (int i = 0; i <= 24; ++i) {
+	for (int i = 0; i <= 20; ++i) {
 		cv::line(canvas, {hist_x + i*50, hist_y + hh}, {hist_x + i*50, hist_y + hh+3}, cv::Scalar::all(255));
 		putTextCentered(canvas, std::to_string(i*250), {hist_x + i*50, hist_y + hh+10}, cv::FONT_HERSHEY_PLAIN, 0.8, cv::Scalar::all(255));
 	}
-	putTextCentered(canvas, "mm", {hist_x + 1200 + 30, hist_y + hh+10}, cv::FONT_HERSHEY_PLAIN, 0.8, cv::Scalar::all(255));
+	putTextCentered(canvas, "mm", {hist_x + 1000 + 30, hist_y + hh+10}, cv::FONT_HERSHEY_PLAIN, 0.8, cv::Scalar::all(255));
 
 	std::string help = 
 		"S - save images\n"
+		"\n"
 		"A - auto range\n"
+		"D - depth mode\n"
+		"V - video mode\n"
+		"\n"
 		"Q - quit"
 	;
 
 	putTexts(canvas, help, {10, 20}, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar::all(255), 2);
 	
-	cv::rectangle(canvas, cv::Rect(5, 4, 200, 82), cv::Scalar::all(255), 1);
+	cv::rectangle(canvas, cv::Rect(5, 4, 200, 230), cv::Scalar::all(222), 1);
 	
 	putTexts(canvas, "R:\nG:\nB:\nD:", {1080, 20}, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar::all(255), 2);
 	cv::rectangle(canvas, cv::Rect(1075, 4, 200, 82), cv::Scalar::all(255), 1);
@@ -118,8 +133,10 @@ static void onMouse( int event, int x, int y, int, void* data) {
 	mouse_pos * mp = (mouse_pos*)data;
 	y = y - 240;
 	if (x > 640) x = x - 640;
-	mp->x = x;
-	mp->y = y;
+	if (event == cv::EVENT_LBUTTONDOWN) {
+		mp->x = x;
+		mp->y = y;
+	}
 }
 
 int main(int argc, char * argv[]) {
@@ -245,12 +262,14 @@ int main(int argc, char * argv[]) {
 			cv::rectangle(canvas, {1150,65,60,20}, col_depth.at<cv::Vec3b>(mp.y, mp.x), -1);
 		}
 
+		drawPoint(out_rgb, {mp.x, mp.y});
+		drawPoint(col_depth, {mp.x, mp.y});
 		putOn(canvas, out_rgb, {0, 240});
 		putOn(canvas, col_depth, {640, 240});
-		putOn(canvas, hist_img, {30, 100});
+		putOn(canvas, hist_img, {220, 110});
 		cv::imshow("KinectViewer", canvas);
 
-		char ch = cv::waitKey(15);
+		char ch = cv::waitKey(5);
 
 		switch(ch) {
 			case 27:
