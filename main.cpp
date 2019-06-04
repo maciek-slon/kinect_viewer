@@ -71,8 +71,8 @@ std::string timestamp() {
 cv::Mat getHist(cv::Mat depth, float rng = 5000) {
 	float range[] = { 1, rng } ;
 	const float* histRange = { range };
-	int histSize = 1200;
-	bool uniform = true; 
+	int histSize = 1000;
+	bool uniform = true;
 	bool accumulate = false;
 
 	cv::Mat hist;
@@ -148,6 +148,9 @@ int main(int argc, char * argv[]) {
 	int depth_min = 500;
 	int depth_range = 1500;
 
+	bool depth_aligned = true;
+	bool video_ir = false;
+
 	int blend_ratio = 50;
 
 	int index = 0;
@@ -213,11 +216,27 @@ int main(int argc, char * argv[]) {
 			cv_rgb = sim_rgb.clone();
 			cv_depth = sim_depth.clone();
 		} else {
-			ret = freenect_sync_get_video((void**)&rgb, &ts, index, FREENECT_VIDEO_RGB);
-			cv::Mat tmp_rgb(480, 640, CV_8UC3, rgb);
-			cv::cvtColor(tmp_rgb, cv_rgb, cv::COLOR_RGB2BGR);
+			if (video_ir) {
+				ret = freenect_sync_get_video((void**)&rgb, &ts, index, FREENECT_VIDEO_IR_10BIT);
+				cv::Mat tmp_rgb(480, 640, CV_16UC1, rgb);
+				cv::Mat tmp_ir;
+				tmp_rgb.convertTo(tmp_ir, CV_32FC1);
+				tmp_ir = tmp_ir / 1024 - 1;
+				tmp_ir = tmp_ir.mul(tmp_ir);
+				tmp_ir = -(tmp_ir - 1) * 255;
+				tmp_ir.convertTo(tmp_rgb, CV_8UC1);
+				cv::cvtColor(tmp_rgb, cv_rgb, cv::COLOR_GRAY2BGR);
+			} else {
+				ret = freenect_sync_get_video((void**)&rgb, &ts, index, FREENECT_VIDEO_RGB);
+				cv::Mat tmp_rgb(480, 640, CV_8UC3, rgb);
+				cv::cvtColor(tmp_rgb, cv_rgb, cv::COLOR_RGB2BGR);
+			}
 
-			ret = freenect_sync_get_depth((void**)&depth, &ts, index, FREENECT_DEPTH_REGISTERED);
+			if (depth_aligned) {
+				ret = freenect_sync_get_depth((void**)&depth, &ts, index, FREENECT_DEPTH_REGISTERED);
+			} else {
+				ret = freenect_sync_get_depth((void**)&depth, &ts, index, FREENECT_DEPTH_MM);
+			}
 			cv::Mat tmp_depth(480, 640, CV_16UC1, depth);
 			cv_depth = tmp_depth;
 		}
@@ -269,12 +288,13 @@ int main(int argc, char * argv[]) {
 		putOn(canvas, hist_img, {220, 110});
 		cv::imshow("KinectViewer", canvas);
 
-		char ch = cv::waitKey(5);
+		int key = cv::waitKey(5);
+//		if (key > 0) std::cout << key << "|" << (key & 0xff) << std::endl;
+		char ch = key & 0xff;
 
 		switch(ch) {
 			case 27:
 			case 'q':
-			case 'Q':
 				return 0;
 			case 's':
 			case 'S': {
@@ -295,6 +315,12 @@ int main(int argc, char * argv[]) {
 					cv::setTrackbarPos("range", "KinectViewer", depth_range);
 					break;
 				}
+			case 'd':
+				depth_aligned = !depth_aligned;
+				break;
+			case 'v':
+				video_ir = !video_ir;
+				break;
 		}	
 	}
 	
