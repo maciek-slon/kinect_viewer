@@ -210,6 +210,10 @@ int main(int argc, char * argv[]) {
 	cv::Mat canvas(720, 1280, CV_8UC3, cv::Scalar::all(0));
 	drawCanvas(canvas);
 
+	int history_size = 800;
+	cv::Mat history(1, history_size, CV_16UC1, cv::Scalar::all(0));
+	int history_pos = 0;
+
 	while(1) {
 		cv::Mat cv_rgb, cv_depth;
 		if (sim) {
@@ -253,7 +257,6 @@ int main(int argc, char * argv[]) {
 		cv_rgb.copyTo(tmp_rgb, depth_mask);
 		cv::addWeighted(cv_rgb, 0.01 * blend_ratio, tmp_rgb, 0.01 * (100-blend_ratio), 0, out_rgb);
 
-
 		cv::Mat hist = getHist(cv_depth);
 		cv::Mat hist_img = drawHist(hist);
 		
@@ -279,6 +282,20 @@ int main(int argc, char * argv[]) {
 			putTexts(canvas, pixel_str, {1100, 20}, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar::all(255), 2);
 			cv::rectangle(canvas, {1150,5,60,60}, cv::Scalar(bgr), -1);
 			cv::rectangle(canvas, {1150,65,60,20}, col_depth.at<cv::Vec3b>(mp.y, mp.x), -1);
+			history.at<short>(0, history_pos) = d;
+			history_pos++;
+			history_pos %= history_size;
+		}
+
+		double hmin, hmax;
+		cv::Point l1, l2;
+		cv::Mat hmask = history > 0;
+		cv::minMaxLoc(history, &hmin, &hmax, &l1, &l2, hmask);
+		for (int i = 0; i < history_size; ++i) {
+			float hv =  history.at<short>(0, (history_pos + i) % history_size);
+			hv = (hv - hmin) / (hmax - hmin);
+			cv::line(canvas, {i+215, 0}, {i+215, 80}, cv::Scalar::all(0));
+			cv::line(canvas, {i+215, 80-80*hv}, {i+215, 80}, cv::Scalar::all(255));
 		}
 
 		drawPoint(out_rgb, {mp.x, mp.y});
