@@ -352,6 +352,10 @@ int main(int argc, char * argv[]) {
 			case 'v':
 				video_ir = !video_ir;
 				break;
+			case 'h':
+				history_pos = 0;
+				history = cv::Mat::zeros(history.size(), CV_16UC1);
+				break;
 		}	
 	}
 	
