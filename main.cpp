@@ -129,6 +129,30 @@ struct mouse_pos {
 	int y;
 };
 
+cv::Mat drawHistory(cv::Mat history, int history_pos, int height = 100) {
+	cv::Mat out(height, history.size().width, CV_8UC3, cv::Scalar::all(0));
+
+	for (int c = 0; c < history.size().height; ++c) {
+		double hmin, hmax;
+		cv::Point l1, l2;
+		cv::Mat hmask = history.row(c) > 0;
+		cv::minMaxLoc(history.row(c), &hmin, &hmax, &l1, &l2, hmask);
+		float hrange = hmax - hmin;
+		hmin -= 0.05*hrange;
+		hmax += 0.05*hrange;
+		float prev_hv = history.at<short>(c, (history_pos) % history.size().width);
+		prev_hv = (prev_hv - hmin) / (hmax - hmin);
+		for (int i = 1; i < history.size().width; ++i) {
+			float hv =  history.at<short>(c, (history_pos + i) % history.size().width);
+			hv = (hv - hmin) / (hmax - hmin);
+			if (prev_hv > 0 && hv > 0) 
+				cv::line(out, {i, height*(1-prev_hv)}, {i, height*(1-hv)}, cv::Scalar::all(255));
+			prev_hv = hv;
+		}
+	}
+	return out;
+}
+
 static void onMouse( int event, int x, int y, int, void* data) {
 	mouse_pos * mp = (mouse_pos*)data;
 	y = y - 240;
@@ -287,22 +311,12 @@ int main(int argc, char * argv[]) {
 			history_pos %= history_size;
 		}
 
-		double hmin, hmax;
-		cv::Point l1, l2;
-		cv::Mat hmask = history > 0;
-		cv::minMaxLoc(history, &hmin, &hmax, &l1, &l2, hmask);
-		for (int i = 0; i < history_size; ++i) {
-			float hv =  history.at<short>(0, (history_pos + i) % history_size);
-			hv = (hv - hmin) / (hmax - hmin);
-			cv::line(canvas, {i+215, 0}, {i+215, 80}, cv::Scalar::all(0));
-			cv::line(canvas, {i+215, 80-80*hv}, {i+215, 80}, cv::Scalar::all(255));
-		}
-
 		drawPoint(out_rgb, {mp.x, mp.y});
 		drawPoint(col_depth, {mp.x, mp.y});
 		putOn(canvas, out_rgb, {0, 240});
 		putOn(canvas, col_depth, {640, 240});
 		putOn(canvas, hist_img, {220, 110});
+		putOn(canvas, drawHistory(history, history_pos), {215, 10});
 		cv::imshow("KinectViewer", canvas);
 
 		int key = cv::waitKey(5);
